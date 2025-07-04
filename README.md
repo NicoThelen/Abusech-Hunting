@@ -4,19 +4,14 @@
 
 Originally available only via the WebUI at [hunting.abuse.ch](https://hunting.abuse.ch/) (see the [blog](https://abuse.ch/blog/introducing-abuse-ch-hunting-platform/)), Abuse.ch Hunting enables analysts to hunt across multiple threat intelligence feeds from a single interface. 
 
-Since it is currently only available as a WebUI and no useful API endpoints exist, this script is intended to replicate similar functions of the WebUI and additionally enable bulk processing  and custom automation.
+Since it's currently only available as a WebUI and no useful API endpoints exist, this script is intended to replicate similar functions of the WebUI and additionally enable bulk processing  and custom automation.
 
 In the background, the tool queries the API endpoints of the individual Abuse.ch platforms automatically and IOC-dependently and aggregates the threat intelligence in a machine-readable and standardized way. Results are consolidated into a single JSON report.
-
-It supports:
-- File hashes (MD5, SHA256) via MalwareBazaar and Yaraify
-- URLs, domains, and IPv4 addresses via URLhaus and ThreatFox
-
 
 ## Notes and Requirements
 
 > [!WARNING]
-> Abuse.ch Terms of Use - These should be followed and taken into account during use
+> **Abuse.ch Terms of Use** - These should be followed and taken into account during use
 > * "[...] Your Query volume per each abuse.ch platform must not exceed volumes reasonably expected in circumstances of not-for-profit related usage [...]"
 > * "Use of the abuse.ch platforms by companies, organizations, individuals and networks with requirements likely to breach or exceed the fair use principles set out above, may require a paid subscription service via Spamhaus, which is designed for users with commercial / for-profit requirements."
 
@@ -46,6 +41,11 @@ It can support you in the creation of SIEM, Sigma, IDS/IPS, EDR or YARA signatur
    - **Yaraify**: `https://yaraify-api.abuse.ch/api/v1/`Used for SHA256 and MD5 Hashes
 4. **Aggregation**: Combines platform responses into a unified JSON structure per IOC
 
+It doesn't support (only via WebUI): 
+- Sandnet (internal malware detonation service)
+- IPintel (internal IP address signal collection service)
+- ProxyCheck (database of known residential proxy IP addresses)
+
 ## Usage
 
 Obtain an API token by registering or logging in at [hunting.abuse.ch](https://hunting.abuse.ch/), then generate and copy your key.
@@ -56,9 +56,7 @@ The IOC Bulk-file should be placed in the script directory.
 > To prevent the token from appearing in the command history, the option to pass it via env var is available
 
 ```shell
-# Provide API Token via env variable 
-set ABUSE_CH_API_TOKEN=YOUR_API_TOKEN or 
-export ABUSE_CH_API_TOKEN=YOUR_API_TOKEN
+# Provided API Token via env variable (no param needed)
 python abusech_hunting.py -f iocs.txt
 
 # Or provide token via parameter
