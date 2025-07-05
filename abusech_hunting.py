@@ -12,11 +12,12 @@ import requests
 import logging
 import os
 
-# Define the Abuse.ch API endpoints
+# Define Abuse.ch API endpoints and Request Timeout
 MALWAREBAZAAR_API   = 'https://mb-api.abuse.ch/api/v1/'         # MalwareBazaar hash reporting API
 YARAIFY_API         = 'https://yaraify-api.abuse.ch/api/v1/'    # Yaraify rule generation API
 URLHAUS_API         = 'https://urlhaus-api.abuse.ch/v1/'        # URLhaus IOC lookup API
 THREATFOX_API       = 'https://threatfox-api.abuse.ch/api/v1/'  # ThreatFox IOC search API
+DEFAULT_TIMEOUT     = 10                                        # Request Timeout
 
 # Regular expressions to detect IOC type
 IOC_PATTERNS = {
@@ -38,6 +39,7 @@ def detect_ioc_type(ioc):
     for ioc_type, pattern in IOC_PATTERNS.items():
         if pattern.match(ioc):
             return ioc_type
+        
     return None
 
 
@@ -46,10 +48,13 @@ def query_malwarebazaar(ioc, headers):
     payload = {'query': 'get_info', 'hash': ioc}
 
     try:
-        response = requests.post(MALWAREBAZAAR_API, headers=headers, data=payload)
+        response = requests.post(MALWAREBAZAAR_API, headers=headers, data=payload, timeout=DEFAULT_TIMEOUT)
         response.raise_for_status()
         return response.json()
     
+    except requests.Timeout as timeout_error:
+        logging.error(f"MalwareBazaar query timed out for {defang_ioc(ioc)}: {timeout_error}")
+        return {"error": f"MalwareBazaar query timed out: {timeout_error}"}
     except requests.RequestException as error:
         logging.error(f"MalwareBazaar query failed for {defang_ioc(ioc)}: {error}")
         return {'error': f'MalwareBazaar query failed: {error}'}
@@ -58,11 +63,15 @@ def query_malwarebazaar(ioc, headers):
 # Query Yaraify, ioc: MD5 or SHA256 hash, headers: authentication header
 def query_yaraify(ioc, headers):
     payload = {'query': 'lookup_hash', 'search_term': ioc}
+
     try:
-        response = requests.post(YARAIFY_API, headers=headers, json=payload)
+        response = requests.post(YARAIFY_API, headers=headers, json=payload, timeout=DEFAULT_TIMEOUT)
         response.raise_for_status()
         return response.json()
     
+    except requests.Timeout as timeout_error:
+        logging.error(f"Yaraify lookup_hash query timed out for {defang_ioc(ioc)}: {timeout_error}")
+        return {"error": f"Yaraify lookup_hash query timed out: {timeout_error}"}
     except requests.RequestException as error:
         logging.error(f"Yaraify lookup_hash query failed for {defang_ioc(ioc)}: {error}")
         return {'error': f"Yaraify lookup_hash query failed: {error}"}
@@ -74,11 +83,9 @@ def query_urlhaus(ioc, ioc_type, headers):
     if ioc_type == 'url':
         endpoint = URLHAUS_API + 'url/'
         data = {'url': ioc}
-
     elif ioc_type in ('domain', 'ipv4'):
         endpoint = URLHAUS_API + 'host/'
         data = {'host': ioc}
-
     else:
         endpoint = URLHAUS_API + 'payload/'
         if len(ioc) == 32:  # Use MD5 or SHA256 parameter
@@ -87,10 +94,13 @@ def query_urlhaus(ioc, ioc_type, headers):
             data = {'sha256_hash': ioc}
 
     try:
-        response = requests.post(endpoint, headers=headers, data=data)
+        response = requests.post(endpoint, headers=headers, data=data, timeout=DEFAULT_TIMEOUT)
         response.raise_for_status()
         return response.json()
     
+    except requests.Timeout as timeout_error:
+        logging.error(f"URLhaus query timed out for {defang_ioc(ioc)} ({ioc_type}): {timeout_error}")
+        return {"error": f"URLhaus query timed out: {timeout_error}"}
     except requests.RequestException as error:
         logging.error(f"URLhaus query failed for {defang_ioc(ioc)} ({ioc_type}): {error}")
         return {'error': f'URLhaus query failed: {error}'}
@@ -103,11 +113,15 @@ def query_threatfox(ioc, ioc_type, headers):
         payload = {'query': 'search_ioc', 'search_term': ioc, 'exact_match': True}
     else:
         payload = {'query': 'search_hash', 'hash': ioc}
+
     try:
-        response = requests.post(THREATFOX_API, headers=headers, json=payload)
+        response = requests.post(THREATFOX_API, headers=headers, json=payload, timeout=DEFAULT_TIMEOUT)
         response.raise_for_status()
         return response.json()
     
+    except requests.Timeout as timeout_error:
+        logging.error(f"ThreatFox query timed out for {defang_ioc(ioc)}: {timeout_error}")
+        return {"error": f"ThreatFox query timed out: {timeout_error}"}
     except requests.RequestException as error:
         logging.error(f"ThreatFox query failed for {defang_ioc(ioc)}: {error}")
         return {'error': f'ThreatFox query failed: {error}'}
@@ -134,18 +148,25 @@ def aggregate_ioc(ioc, headers):
     return result
 
 
-# Load IOCs from a file, one per line, ignore blank/comments, file_path: path to IOC list file
+# Load IOCs from a file, one per line, file_path: path to IOC list file
 def load_iocs(file_path):
     ioc_list = []
     
-    with open(file_path, 'r') as file_content:
-        for line in file_content:
-            cleaned = line.strip()
-            if cleaned and not cleaned.startswith('#'):
-                ioc_list.append(cleaned)
+    try:
+        with open(file_path, 'r') as file_content:
+            for line in file_content:
+                cleaned = line.strip()
+                if cleaned and not cleaned.startswith('#'):     # Ignore blank/comment lines
+                    ioc_list.append(cleaned)
+    
+    except IOError as error:
+        logging.error(f"Error reading IOC file {file_path}: {error}")
+        sys.exit(1)
+
     return ioc_list
 
 
+# MAIN
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Aggregate IOC information across Abuse.ch platforms')
     group = parser.add_mutually_exclusive_group(required=True)
@@ -161,6 +182,11 @@ if __name__ == '__main__':
     single_ioc = args['ioc'].strip() if not file else None
     api_token = os.environ.get('ABUSE_CH_API_TOKEN', args["token"]) # Retrieve API Token from env or given argument
     output = args["output"]
+
+    # Check the existence of an API key
+    if not api_token:
+        print("Error: Abuse.ch API token is required. Provide via -t/--token option or ABUSE_CH_API_TOKEN env variable")
+        sys.exit(1)
 
     # Set up headers for authentication
     headers = {'Auth-Key': api_token}
