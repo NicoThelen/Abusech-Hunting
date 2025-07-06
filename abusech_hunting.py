@@ -167,7 +167,7 @@ def load_iocs(file_path):
 
 
 # MAIN
-if __name__ == '__main__':
+def main():
     parser = argparse.ArgumentParser(description='Aggregate IOC information across Abuse.ch platforms')
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('-f', '--file', help='File path containing IOCs, one per line')
@@ -216,3 +216,7 @@ if __name__ == '__main__':
     except IOError as error:
         logging.error(f"Error writing to file {output}: {error}")
         sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()
